@@ -1,0 +1,6 @@
+{
+  "name": "怪異同盟",
+  "description": "世界各国の怪異と同盟を結び魔王と対峙する3Dオカルトモノポリーゲーム",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
