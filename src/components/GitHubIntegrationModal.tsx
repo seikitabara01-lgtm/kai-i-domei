@@ -97,7 +97,7 @@ export const GitHubIntegrationModal: React.FC<GitHubIntegrationModalProps> = ({ 
                 連携リポジトリ:
               </span>
               <span className="text-purple-300 font-bold">
-                {repoInfo?.repository || 'ghost-cryptid-alliance/kai-i-domei'}
+                {repoInfo?.repository || 'seikitabara01-lgtm/kai-i-domei'}
               </span>
             </div>
             <div className="flex items-center justify-between">
@@ -152,12 +152,12 @@ export const GitHubIntegrationModal: React.FC<GitHubIntegrationModalProps> = ({ 
         {/* Footer */}
         <div className="p-3 sm:p-4 border-t border-white/10 bg-slate-950 flex items-center justify-between text-xs font-mono">
           <a
-            href="https://github.com"
+            href="https://github.com/seikitabara01-lgtm/kai-i-domei"
             target="_blank"
             rel="noopener noreferrer"
             className="text-purple-400 hover:text-purple-300 flex items-center gap-1"
           >
-            <span>GitHub Webサイトへ</span>
+            <span>GitHubリポジトリを開く</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
           <button

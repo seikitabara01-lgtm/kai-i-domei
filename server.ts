@@ -263,7 +263,7 @@ app.get('/api/github/status', (_req, res) => {
     success: true,
     integration: {
       connected: true,
-      repository: 'ghost-cryptid-alliance/kai-i-domei',
+      repository: 'seikitabara01-lgtm/kai-i-domei',
       branch: 'main',
       latestSync: new Date().toISOString(),
       syncFeatures: [

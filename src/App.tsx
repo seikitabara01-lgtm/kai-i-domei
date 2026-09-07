@@ -23,6 +23,7 @@ import { CardModal } from './components/CardModal';
 import { GameSetup } from './components/GameSetup';
 import { GameOverModal } from './components/GameOverModal';
 import { MatchHistoryModal } from './components/MatchHistoryModal';
+import { PauseModal } from './components/PauseModal';
 import { AdminPanel } from './components/AdminPanel';
 import { GitHubIntegrationModal } from './components/GitHubIntegrationModal';
 import { occultAudio } from './utils/occultAudio';
@@ -64,6 +65,7 @@ export default function App() {
   const [roundsCount, setRoundsCount] = useState(1);
   const [currentCard, setCurrentCard] = useState<OccultCard | null>(null);
   const [isCard100PercentUnlucky, setIsCard100PercentUnlucky] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   // Modals
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -198,6 +200,7 @@ export default function App() {
     setLastRoll(null);
     setRoundsCount(1);
     setIsGameOver(false);
+    setIsPaused(false);
     setIsGameStarted(true);
 
     // Occult BGM start
@@ -301,7 +304,7 @@ export default function App() {
 
   // Dice Roll Logic
   const handleRollDice = () => {
-    if (!canRoll || isRolling) return;
+    if (!canRoll || isRolling || isPaused) return;
 
     setIsRolling(true);
     setCanRoll(false);
@@ -533,6 +536,32 @@ export default function App() {
     setTimeout(() => advanceToNextPlayer(players), 1100);
   };
 
+  // Pause / Resume / Quit game flow handlers
+  const handlePauseGame = () => {
+    setIsPaused(true);
+    if (aiTimeoutRef.current) {
+      clearTimeout(aiTimeoutRef.current);
+      aiTimeoutRef.current = null;
+    }
+    addLog('⏸ 【儀式一時中断】時の刻みが停止しました。', 'system', 'text-amber-300 font-bold');
+  };
+
+  const handleResumeGame = () => {
+    setIsPaused(false);
+    addLog('▶ 【儀式再開】時の刻みが動き出しました。', 'system', 'text-purple-300 font-bold');
+  };
+
+  const handleQuitGame = () => {
+    setIsPaused(false);
+    setIsGameStarted(false);
+    setIsGameOver(false);
+    if (aiTimeoutRef.current) {
+      clearTimeout(aiTimeoutRef.current);
+      aiTimeoutRef.current = null;
+    }
+    addLog('◆ 儀式を破棄し、初期契約画面へ回帰しました。', 'system', 'text-white/60');
+  };
+
   // Human Choice ①: Form Alliance
   const handleHumanFormAlliance = () => {
     const p = players[0];
@@ -662,7 +691,7 @@ export default function App() {
 
   // AI Turn Execution Effect
   useEffect(() => {
-    if (!isGameStarted || isGameOver) return;
+    if (!isGameStarted || isGameOver || isPaused) return;
     const activePlayer = players[activePlayerIndex];
     if (!activePlayer || activePlayer.isHuman || activePlayer.isBankrupt) return;
 
@@ -684,7 +713,7 @@ export default function App() {
     return () => {
       if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
     };
-  }, [activePlayerIndex, isGameStarted, isGameOver]);
+  }, [activePlayerIndex, isGameStarted, isGameOver, isPaused]);
 
   // If on admin route, show Admin Panel
   if (currentRoute === 'admin') {
@@ -761,7 +790,7 @@ export default function App() {
               players={players}
               activePlayerIndex={activePlayerIndex}
               isRolling={isRolling}
-              canRoll={Boolean(canRoll && isHumanTurn)}
+              canRoll={Boolean(canRoll && isHumanTurn && !isPaused)}
               onRollDice={handleRollDice}
               lastRoll={lastRoll}
               targetLaps={settings.targetLaps}
@@ -769,8 +798,8 @@ export default function App() {
               isMuted={isMuted}
               onToggleMute={handleToggleMute}
               onOpenHistory={() => setIsHistoryOpen(true)}
-              onOpenAdmin={() => navigateTo('admin')}
               onOpenGithub={() => setIsGithubOpen(true)}
+              onPause={handlePauseGame}
               deviceMode={deviceMode}
             />
           </div>
@@ -785,6 +814,16 @@ export default function App() {
           onConfirm={handleCardModalConfirm}
         />
       )}
+
+      {/* Ritual Pause Modal (中断・再開・終了) */}
+      <PauseModal
+        isOpen={isPaused}
+        players={players}
+        settings={settings}
+        roundsCount={roundsCount}
+        onResume={handleResumeGame}
+        onQuit={handleQuitGame}
+      />
 
       {/* Game Over Modal */}
       {isGameOver && (

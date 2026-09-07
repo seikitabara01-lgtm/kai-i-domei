@@ -1,6 +1,6 @@
 import React from 'react';
 import { PlayerState, GameLog, DeviceMode } from '../types';
-import { Dices, Volume2, VolumeX, Shield, Skull, History, Settings, Github, Zap } from 'lucide-react';
+import { Dices, Volume2, VolumeX, Shield, Skull, History, Pause, Github, Zap } from 'lucide-react';
 import { calculateLapInterest } from '../data/gameData';
 
 interface PlayerHUDProps {
@@ -15,8 +15,8 @@ interface PlayerHUDProps {
   isMuted: boolean;
   onToggleMute: () => void;
   onOpenHistory: () => void;
-  onOpenAdmin: () => void;
   onOpenGithub: () => void;
+  onPause: () => void;
   deviceMode: DeviceMode;
 }
 
@@ -32,8 +32,8 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
   isMuted,
   onToggleMute,
   onOpenHistory,
-  onOpenAdmin,
   onOpenGithub,
+  onPause,
   deviceMode
 }) => {
   const activePlayer = players[activePlayerIndex];
@@ -59,6 +59,15 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
 
         {/* Global Toolbar Buttons */}
         <div className="flex items-center gap-1 sm:gap-1.5">
+          {/* Pause / 中断 Button */}
+          <button
+            onClick={onPause}
+            className="px-2.5 py-1.5 rounded-lg bg-amber-950/60 hover:bg-amber-900/80 border border-amber-600/70 text-amber-200 text-xs font-mono font-bold flex items-center gap-1 transition shadow cursor-pointer active:scale-95"
+            title="儀式を一時中断 (再開・終了の選択)"
+          >
+            <Pause className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+            <span>中断</span>
+          </button>
           <button
             onClick={onToggleMute}
             className="p-1.5 rounded-lg bg-slate-900 hover:bg-purple-950 border border-purple-900/50 text-purple-300 hover:text-white transition"
@@ -81,13 +90,6 @@ export const PlayerHUD: React.FC<PlayerHUDProps> = ({
           >
             <Github className="w-3.5 h-3.5" />
             <span className="hidden md:inline">GitHub</span>
-          </button>
-          <button
-            onClick={onOpenAdmin}
-            className="p-1.5 rounded-lg bg-slate-900 hover:bg-purple-950 border border-purple-900/50 text-purple-300 hover:text-white transition"
-            title="管理者メニュー (/admin)"
-          >
-            <Settings className="w-4 h-4" />
           </button>
         </div>
       </div>
