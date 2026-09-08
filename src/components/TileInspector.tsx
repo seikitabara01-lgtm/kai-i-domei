@@ -1,6 +1,6 @@
 import React from 'react';
 import { BoardTile, PlayerState } from '../types';
-import { Shield, Swords, DollarSign, Crown, MapPin, AlertTriangle, Sparkles } from 'lucide-react';
+import { Shield, Swords, Crown, MapPin, AlertTriangle, Sparkles, Info } from 'lucide-react';
 
 interface TileInspectorProps {
   tile: BoardTile;
@@ -10,7 +10,6 @@ interface TileInspectorProps {
   isLandedOn: boolean;
   onFormAlliance: () => void;
   onBattleCryptid: () => void;
-  onPassSpecialTile?: () => void;
 }
 
 export const TileInspector: React.FC<TileInspectorProps> = ({
@@ -20,14 +19,13 @@ export const TileInspector: React.FC<TileInspectorProps> = ({
   isHumanTurn,
   isLandedOn,
   onFormAlliance,
-  onBattleCryptid,
-  onPassSpecialTile
+  onBattleCryptid
 }) => {
   const cryptid = tile.cryptid;
   const owner = players.find(p => p.id === tile.ownerId);
-  const isOwner = tile.ownerId === activePlayer.id;
+  const isOwner = tile.ownerId === activePlayer?.id;
   const hasOtherOwner = tile.ownerId !== null && !isOwner;
-  const canAffordAlliance = cryptid ? activePlayer.ghosts >= cryptid.allianceCost : false;
+  const canAffordAlliance = cryptid && activePlayer ? activePlayer.ghosts >= cryptid.allianceCost : false;
 
   return (
     <div className="bg-slate-950/90 backdrop-blur-md rounded-xl border border-purple-900/60 p-3 sm:p-4 text-white shadow-xl flex flex-col justify-between h-full overflow-y-auto">
@@ -73,7 +71,7 @@ export const TileInspector: React.FC<TileInspectorProps> = ({
             </div>
           ) : (
             <div className="text-3xl p-2 rounded-xl bg-red-950/70 border border-red-700/50 flex-shrink-0 shadow-inner">
-              👑
+              {tile.type === 'start' ? '👑' : tile.type === 'blood_tax' ? '🩸' : tile.type === 'occult_rift' ? '🌀' : '🔮'}
             </div>
           )}
           <div>
@@ -106,7 +104,7 @@ export const TileInspector: React.FC<TileInspectorProps> = ({
               <div className="bg-white/5 p-2 rounded border border-white/5">
                 <span className="text-white/50 block">基本貢納 (進入時):</span>
                 <span className="text-rose-400 font-bold text-sm">
-                  {cryptid.baseTribute.toLocaleString()} G
+                  +{cryptid.baseTribute.toLocaleString()} G
                 </span>
               </div>
             </div>
@@ -132,101 +130,59 @@ export const TileInspector: React.FC<TileInspectorProps> = ({
         </div>
       </div>
 
-      {/* Action Buttons (Enabled when human player has landed on this tile) */}
-      <div className="mt-4 pt-3 border-t border-white/10 space-y-2">
-        {isHumanTurn && isLandedOn ? (
-          <>
-            {/* Case A: Unallied Cryptid -> Option 1: Alliance, Option 2: Battle */}
-            {tile.type === 'cryptid' && !tile.ownerId && (
-              <div className="space-y-2">
-                <div className="text-[11px] text-amber-300/90 font-mono flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  選択: 同盟を締結するか、バトルを挑むか決めてください
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    onClick={onFormAlliance}
-                    disabled={!canAffordAlliance}
-                    className={`p-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition ${
-                      canAffordAlliance
-                        ? 'bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white shadow-lg cursor-pointer'
-                        : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                    }`}
-                  >
-                    <Shield className="w-4 h-4" />
-                    <span>① 同盟締結 ({cryptid?.allianceCost} G)</span>
-                  </button>
-                  <button
-                    onClick={onBattleCryptid}
-                    className="p-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 bg-gradient-to-r from-red-800 to-rose-700 hover:from-red-700 hover:to-rose-600 text-white shadow-lg transition cursor-pointer"
-                  >
-                    <Swords className="w-4 h-4" />
-                    <span>② 怪異とバトル (運命カード)</span>
-                  </button>
-                </div>
-                {!canAffordAlliance && (
-                  <p className="text-[10px] text-red-400 font-mono text-center">
-                    ※ 所持ゴースト不足のため、怪異とバトル（運命カード）のみ可能です
-                  </p>
-                )}
-              </div>
-            )}
+      {/* Information / Action Status Panel */}
+      <div className="mt-4 pt-3 border-t border-white/10">
+        {tile.type === 'cryptid' && !tile.ownerId && (
+          <div className="p-2.5 rounded-lg bg-purple-950/60 border border-purple-800/60 text-xs text-purple-200">
+            <div className="flex items-center gap-1.5 font-bold text-amber-300 mb-1">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              未契約の怪異領域
+            </div>
+            <p className="text-[11px] text-white/70">
+              このマスに着地すると、「①同盟を結ぶ」か「②怪異とバトル」を選択できます。
+            </p>
+          </div>
+        )}
 
-            {/* Case B: Allied by Another Player -> Option 3: Battle (100% unlucky cards) */}
-            {tile.type === 'cryptid' && hasOtherOwner && (
-              <div className="space-y-2">
-                <div className="p-2 rounded bg-red-950/80 border border-red-600/70 text-red-200 text-xs flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                  <span>
-                    【他プレイヤー領域侵犯】{owner?.name} の同盟領域に侵入しました！
-                    怪異との迎撃バトルが発生します（不運100%カード）。
-                  </span>
-                </div>
-                <button
-                  onClick={onBattleCryptid}
-                  className="w-full p-3 rounded-lg font-bold text-xs flex items-center justify-center gap-2 bg-gradient-to-r from-red-700 to-rose-700 hover:from-red-600 hover:to-rose-600 text-white shadow-lg transition animate-pulse cursor-pointer"
-                >
-                  <Swords className="w-4 h-4" />
-                  <span>③ 領域迎撃バトルを敢行 (不運系100%カード)</span>
-                </button>
-              </div>
-            )}
+        {tile.type === 'cryptid' && hasOtherOwner && (
+          <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-800/60 text-xs text-rose-200">
+            <div className="flex items-center gap-1.5 font-bold text-rose-300 mb-1">
+              <AlertTriangle className="w-4 h-4 text-rose-400" />
+              敵対プレイヤー同盟領域
+            </div>
+            <p className="text-[11px] text-white/70">
+              他プレイヤーが着地した場合、同盟主への貢納金支払いと不運100%の迎撃バトルが発生します。
+            </p>
+          </div>
+        )}
 
-            {/* Case C: Own Allied Tile -> Safe passage */}
-            {tile.type === 'cryptid' && isOwner && (
-              <div className="p-2.5 rounded bg-purple-950/70 border border-purple-700/60 text-center">
-                <p className="text-xs text-purple-200 font-semibold">
-                  あなたの盟友怪異の領域です。穏やかに霊力を保全しました。
-                </p>
-                <button
-                  onClick={onPassSpecialTile}
-                  className="mt-2 w-full py-1.5 px-3 bg-purple-800 hover:bg-purple-700 text-white text-xs rounded transition"
-                >
-                  ターン終了
-                </button>
-              </div>
-            )}
+        {tile.type === 'cryptid' && isOwner && (
+          <div className="p-2.5 rounded-lg bg-emerald-950/60 border border-emerald-800/60 text-xs text-emerald-200">
+            <div className="flex items-center gap-1.5 font-bold text-emerald-300 mb-1">
+              <Shield className="w-4 h-4 text-emerald-400" />
+              あなたの盟友領域
+            </div>
+            <p className="text-[11px] text-white/70">
+              あなたが着地しても安全に通過でき、他者が侵入した際には貢納金を受け取れます。
+            </p>
+          </div>
+        )}
 
-            {/* Case D: Special Tiles */}
-            {tile.type !== 'cryptid' && (
-              <div className="space-y-2">
-                <p className="text-xs text-amber-200/90 text-center">
-                  特殊イベントマスに停止しました。
-                </p>
-                <button
-                  onClick={onPassSpecialTile}
-                  className="w-full py-2 px-3 bg-amber-700 hover:bg-amber-600 text-white text-xs font-bold rounded transition"
-                >
-                  儀式を終えて進む
-                </button>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="text-center py-2 text-xs text-white/40 font-mono">
-            {isHumanTurn
-              ? 'サイコロを振ってマスに移動してください'
-              : 'AI悪魔が自身の勝利のために思考・行動中...'}
+        {tile.type !== 'cryptid' && (
+          <div className="p-2.5 rounded-lg bg-slate-900 border border-white/10 text-xs text-slate-300">
+            <div className="flex items-center gap-1.5 font-bold text-amber-300 mb-1">
+              <Info className="w-4 h-4 text-amber-400" />
+              特殊儀式マス
+            </div>
+            <p className="text-[11px] text-white/70">
+              {tile.type === 'start'
+                ? '魔王の祭壇。周回完了時の通過・停止で利息納付が行われます。'
+                : tile.type === 'blood_tax'
+                ? '血税の生贄台。停止時に所持霊貨の5%を魔王へ強制献上します。'
+                : tile.type === 'occult_rift'
+                ? '異界の特異点。時空を歪めて前方のマスへワープします。'
+                : '呪物収蔵庫。停止時に深淵のオカルトカードを召喚します。'}
+            </p>
           </div>
         )}
       </div>

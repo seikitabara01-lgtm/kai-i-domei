@@ -21,7 +21,7 @@ import { PlayerHUD } from './components/PlayerHUD';
 import { TileInspector } from './components/TileInspector';
 import { CardModal } from './components/CardModal';
 import { CryptidEncounterModal } from './components/CryptidEncounterModal';
-import { AICardNotice } from './components/AICardNotice';
+import { TileEventModal } from './components/TileEventModal';
 import { GameSetup } from './components/GameSetup';
 import { GameOverModal } from './components/GameOverModal';
 import { MatchHistoryModal } from './components/MatchHistoryModal';
@@ -66,24 +66,40 @@ export default function App() {
   const [canRoll, setCanRoll] = useState(true);
   const [lastRoll, setLastRoll] = useState<number | null>(null);
   const [roundsCount, setRoundsCount] = useState(1);
-  const [currentCard, setCurrentCard] = useState<OccultCard | null>(null);
-  const [cardDrawReason, setCardDrawReason] = useState<string>('relic');
-  const [isCard100PercentUnlucky, setIsCard100PercentUnlucky] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
   // Encounter modal for human player landing on unowned cryptid
   const [encounterCryptid, setEncounterCryptid] = useState<Cryptid | null>(null);
 
-  // AI Card broadcast notice
-  const [aiCardNotice, setAiCardNotice] = useState<{
-    playerName: string;
+  // Dramatic Occult Fate Card Modal (Used for BOTH Human & AI)
+  const [cardModalData, setCardModalData] = useState<{
     card: OccultCard;
-    is100PercentUnlucky: boolean;
-    reason: string;
+    player: PlayerState;
+    is100PercentUnlucky?: boolean;
+    reason?: string;
+    resultInfo?: {
+      prevGhosts: number;
+      newGhosts: number;
+      difference: number;
+      extraNote?: string;
+    };
+    onConfirm: () => void;
   } | null>(null);
 
-  // Manual next turn button visibility for human on safe/neutral tiles
-  const [showHumanPassTurnButton, setShowHumanPassTurnButton] = useState(false);
+  // Tile Event Modal (Start altar, Blood tax, Safe ally territory, Occult rift)
+  const [tileEventModalData, setTileEventModalData] = useState<{
+    player: PlayerState;
+    eventType: 'start' | 'blood_tax' | 'safe_cryptid' | 'rift';
+    details: {
+      title: string;
+      description: string;
+      amount?: number;
+      prevGhosts?: number;
+      newGhosts?: number;
+    };
+    onConfirm: () => void;
+    isHuman: boolean;
+  } | null>(null);
 
   // Modals
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -94,9 +110,12 @@ export default function App() {
   // Logs
   const [gameLogs, setGameLogs] = useState<GameLog[]>([]);
 
-  // Ref to track game loop timeout for cleanup and prevent concurrent AI execution
-  const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isAITurnRunningRef = useRef<boolean>(false);
+  // Ref to track latest players state across asynchronous timeouts without stale closures
+  const playersRef = useRef<PlayerState[]>([]);
+  playersRef.current = players;
+
+  // Active AI timer ref
+  const aiTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const addLog = useCallback((text: string, type: GameLog['type'] = 'system', color?: string) => {
     const time = new Date().toLocaleTimeString('ja-JP', { hour12: false });
@@ -298,50 +317,56 @@ export default function App() {
     addLog(`【儀式終了】勝者: ${winner?.name}！ 全記録はサーバーに保存されました。`, 'system', 'text-amber-400 font-black');
   }, [submitMatchToServer, addLog]);
 
-  // Switch Turn to Next Living Player reliably
-  const advanceFromPlayerIndex = useCallback((fromPlayerIndex: number, currentPlayersList?: PlayerState[]) => {
-    isAITurnRunningRef.current = false;
-    setShowHumanPassTurnButton(false);
+  // Switch Turn to Next Living Player in strict sequential clockwise order
+  const advanceToNextPlayer = useCallback((fromPlayerIndex: number, playersOverride?: PlayerState[]) => {
+    // Dismiss active modals
+    setCardModalData(null);
     setEncounterCryptid(null);
+    setTileEventModalData(null);
+    setIsRolling(false);
 
-    const list = currentPlayersList || players;
-    if (checkGameOverCondition(list)) {
-      triggerGameOver(list);
+    const currentList = playersOverride || playersRef.current;
+
+    // Check game over condition
+    if (checkGameOverCondition(currentList)) {
+      triggerGameOver(currentList);
       return;
     }
 
-    let nextIdx = (fromPlayerIndex + 1) % list.length;
+    // Strict sequential turn cycle: 0 -> 1 -> 2 -> 3 -> 0 ...
+    let nextIdx = (fromPlayerIndex + 1) % currentList.length;
     let attempts = 0;
-    while (list[nextIdx]?.isBankrupt && attempts < list.length) {
-      nextIdx = (nextIdx + 1) % list.length;
+    while (currentList[nextIdx]?.isBankrupt && attempts < currentList.length) {
+      nextIdx = (nextIdx + 1) % currentList.length;
       attempts++;
     }
 
-    setActivePlayerIndex(nextIdx);
-    setSelectedTileIndex(list[nextIdx].position);
-
+    // If turn returns to human (nextIdx === 0), advance round count
     if (nextIdx === 0) {
       setRoundsCount(r => r + 1);
     }
 
-    if (list[nextIdx].isHuman) {
+    setActivePlayerIndex(nextIdx);
+    setSelectedTileIndex(currentList[nextIdx].position);
+
+    if (currentList[nextIdx].isHuman) {
       setCanRoll(true);
       addLog(`✨ あなたの手番です。サイコロを振ってください。`, 'system', 'text-amber-300 font-bold');
     } else {
       setCanRoll(false);
+      addLog(`👿 ${currentList[nextIdx].name} の手番です。`, 'system');
     }
-  }, [players, checkGameOverCondition, triggerGameOver, addLog]);
+  }, [checkGameOverCondition, triggerGameOver, addLog]);
 
   // Compatibility alias
-  const advanceToNextPlayer = advanceFromPlayerIndex;
+  const advanceFromPlayerIndex = advanceToNextPlayer;
 
   // Dice Roll Logic for Human
   const handleRollDice = () => {
-    if (!canRoll || isRolling || isPaused) return;
+    if (!canRoll || isRolling || isPaused || isGameOver) return;
 
     setIsRolling(true);
     setCanRoll(false);
-    setShowHumanPassTurnButton(false);
     occultAudio.playDiceRoll();
 
     setTimeout(() => {
@@ -354,7 +379,7 @@ export default function App() {
     }, 850);
   };
 
-  // Movement along the board (supports 36 tiles or dynamic length) and lap interest logic
+  // Movement along the 36-tile board
   const executeMovement = (playerIdx: number, steps: number) => {
     const boardLen = board.length;
 
@@ -378,24 +403,25 @@ export default function App() {
         occultAudio.playBellToll();
 
         addLog(
-          `${p.name} が第${p.laps}周を完了！ 魔王へ利息【${interestDue}ゴースト】を支払い (次周利息1.1倍に膨張)`,
+          `${p.name} が第${p.laps}周を完了！ 魔王へ利息【${interestDue.toLocaleString()} G】を納付。`,
           'interest',
-          'text-rose-400'
+          'text-rose-400 font-bold'
         );
 
         if (p.ghosts < 0) {
           p.isBankrupt = true;
           p.ghosts = 0;
-          addLog(`💀 ${p.name} は魔王への周回利息を支払えず破産・魂を回収された！`, 'bankruptcy', 'text-red-500 font-bold');
+          addLog(`💀 ${p.name} は魔王への周回利息を支払えず破産消滅した！`, 'bankruptcy', 'text-red-500 font-black');
         }
       }
 
       updated[playerIdx] = p;
+      playersRef.current = updated;
 
-      // Evaluate tile landed on after short movement delay
+      // Evaluate landing after piece movement
       setTimeout(() => {
         evaluateTileLanding(playerIdx, updated);
-      }, 500);
+      }, 550);
 
       return updated;
     });
@@ -404,15 +430,9 @@ export default function App() {
   // Draw an Occult Card based on Difficulty and Cryptid Grade
   const drawFateCard = (isHuman: boolean, force100PercentUnlucky: boolean = false): OccultCard => {
     if (force100PercentUnlucky) {
-      // 100% Unlucky
-      const card = OCCULT_CARDS_UNLUCKY[Math.floor(Math.random() * OCCULT_CARDS_UNLUCKY.length)];
-      return card;
+      return OCCULT_CARDS_UNLUCKY[Math.floor(Math.random() * OCCULT_CARDS_UNLUCKY.length)];
     }
 
-    // Determine luck ratio from requirements:
-    // 初級 (Beginner): Human 80%, AI 20%
-    // 中級 (Intermediate): Human 65%, AI 35%
-    // 上級 (Advanced): Human 50%, AI 50%
     let luckyProbability = 0.5;
     if (settings.difficulty === 'beginner') {
       luckyProbability = isHuman ? 0.8 : 0.2;
@@ -430,75 +450,175 @@ export default function App() {
     }
   };
 
+  // Trigger Dramatic Occult Fate Card Event for BOTH Human & AI
+  const triggerCardEvent = (
+    playerIdx: number,
+    card: OccultCard,
+    reason: 'relic' | 'invasion' | 'battle',
+    is100PercentUnlucky: boolean,
+    currentPlayers: PlayerState[],
+    cryptidName?: string,
+    ownerName?: string,
+    tributePaid?: number
+  ) => {
+    const boardLen = board.length;
+    const updated = [...currentPlayers];
+    const p = { ...updated[playerIdx] };
+    const prevGhosts = p.ghosts;
+
+    let difference = 0;
+    let extraNote = '';
+
+    if (card.type === 'lucky') {
+      if (card.category === 'plunder') {
+        let totalStolen = 0;
+        updated.forEach((other, oIdx) => {
+          if (oIdx !== playerIdx && !other.isBankrupt) {
+            const stealAmount = Math.min(other.ghosts, card.effectValue);
+            other.ghosts -= stealAmount;
+            totalStolen += stealAmount;
+          }
+        });
+        p.ghosts += totalStolen;
+        difference = totalStolen;
+        extraNote = `全敵対者から合計 ${totalStolen.toLocaleString()} G を強奪しました！`;
+        occultAudio.playCoin();
+      } else if (card.category === 'teleport') {
+        p.position = (p.position + card.effectValue) % boardLen;
+        extraNote = `時空跳躍により盤上を ${card.effectValue} マス前進しました！`;
+      } else {
+        p.ghosts += card.effectValue;
+        difference = card.effectValue;
+        extraNote = `幸運の加護により霊貨 +${card.effectValue.toLocaleString()} G を獲得！`;
+        occultAudio.playCoin();
+      }
+      addLog(`✨ 【幸運の託宣】${p.name} は『${card.title}』により霊貨+${card.effectValue.toLocaleString()} G！`, 'card', 'text-emerald-400 font-bold');
+    } else {
+      // Unlucky
+      if (card.category === 'teleport') {
+        p.position = (p.position + card.effectValue + boardLen) % boardLen;
+        extraNote = `呪縛により盤上を ${Math.abs(card.effectValue)} マス後退しました…`;
+      } else {
+        p.ghosts -= card.effectValue;
+        difference = -card.effectValue;
+        extraNote = `厄災の呪縛により霊貨 -${card.effectValue.toLocaleString()} G の損害！`;
+      }
+      addLog(`💀 【厄災の呪縛】${p.name} は『${card.title}』により損害-${card.effectValue.toLocaleString()} G！`, 'card', 'text-rose-400 font-bold');
+
+      if (p.ghosts < 0) {
+        p.isBankrupt = true;
+        p.ghosts = 0;
+        addLog(`💀 ${p.name} は怪異の呪縛により全財産を喪失し破産消滅した！`, 'bankruptcy', 'text-red-500 font-black');
+      }
+    }
+
+    if (tributePaid && ownerName) {
+      difference -= tributePaid;
+      extraNote += ` (同盟主 ${ownerName} への進入貢納金 ${tributePaid.toLocaleString()} G 含む)`;
+    }
+
+    updated[playerIdx] = p;
+    setPlayers(updated);
+    playersRef.current = updated;
+
+    if (card.type === 'lucky') {
+      occultAudio.playCardReveal();
+    } else {
+      occultAudio.playDamage();
+    }
+
+    setCardModalData({
+      card,
+      player: p,
+      is100PercentUnlucky,
+      reason,
+      resultInfo: {
+        prevGhosts,
+        newGhosts: p.ghosts,
+        difference,
+        extraNote
+      },
+      onConfirm: () => {
+        setCardModalData(null);
+        advanceToNextPlayer(playerIdx, updated);
+      }
+    });
+  };
+
   // Evaluate Landing on a tile
-  const evaluateTileLanding = (playerIdx: number, playersSnapshot?: PlayerState[]) => {
-    const currentPlayers = playersSnapshot ? [...playersSnapshot] : [...players];
+  const evaluateTileLanding = (playerIdx: number, playersSnapshot: PlayerState[]) => {
+    const currentPlayers = [...playersSnapshot];
     const p = currentPlayers[playerIdx];
     if (!p || p.isBankrupt) {
-      advanceFromPlayerIndex(playerIdx, currentPlayers);
+      advanceToNextPlayer(playerIdx, currentPlayers);
       return;
     }
 
     const tile = board[p.position];
     if (!tile) {
-      advanceFromPlayerIndex(playerIdx, currentPlayers);
+      advanceToNextPlayer(playerIdx, currentPlayers);
       return;
     }
 
     if (tile.type === 'start') {
       addLog(`${p.name} は魔王の祭壇に立ち止まった。静寂が霊力を保全する。`, 'system');
-      if (p.isHuman) {
-        setShowHumanPassTurnButton(true);
-        // Automatically progress after 1.8s or player can click button
-        setTimeout(() => {
-          advanceFromPlayerIndex(0, currentPlayers);
-        }, 1800);
-      } else {
-        setTimeout(() => advanceFromPlayerIndex(playerIdx, currentPlayers), 1100);
-      }
+      setTileEventModalData({
+        player: p,
+        eventType: 'start',
+        details: {
+          title: '魔王の祭壇に到達',
+          description: `${p.name} は魔王の祭壇に立ち止まりました。厳かな静寂が霊力を保全します。`
+        },
+        onConfirm: () => {
+          setTileEventModalData(null);
+          advanceToNextPlayer(playerIdx, currentPlayers);
+        },
+        isHuman: p.isHuman
+      });
     } else if (tile.type === 'occult_rift') {
-      // Occult rift: warp forward 2 tiles
-      addLog(`🌀 異界の特異点！ ${p.name} は時空を跳躍し前方のマスへ歪曲移動！`, 'system', 'text-indigo-400');
-      setTimeout(() => {
-        executeMovement(playerIdx, 2);
-      }, 600);
+      addLog(`🌀 異界の特異点！ ${p.name} は時空を歪曲し前方へ2マス跳躍！`, 'system', 'text-indigo-400');
+      setTileEventModalData({
+        player: p,
+        eventType: 'rift',
+        details: {
+          title: '異界の特異点',
+          description: `${p.name} は時空の歪みに遭遇！ 前方へ2マス跳躍します！`
+        },
+        onConfirm: () => {
+          setTileEventModalData(null);
+          executeMovement(playerIdx, 2);
+        },
+        isHuman: p.isHuman
+      });
     } else if (tile.type === 'blood_tax') {
-      // 5% Tax to Demon King
       const tax = Math.max(100, Math.floor(p.ghosts * 0.05));
+      const prevGhosts = p.ghosts;
       p.ghosts = Math.max(0, p.ghosts - tax);
       occultAudio.playCoin();
-      addLog(`🩸 血税の生贄台！ ${p.name} は魔王へ霊血税 ${tax} ゴーストを強制献上した。`, 'system', 'text-rose-400');
+      addLog(`🩸 血税の生贄台！ ${p.name} は魔王へ霊血税 ${tax.toLocaleString()} G を強制献上した。`, 'system', 'text-rose-400');
+      currentPlayers[playerIdx] = p;
       setPlayers(currentPlayers);
+      playersRef.current = currentPlayers;
 
-      if (p.isHuman) {
-        setShowHumanPassTurnButton(true);
-        setTimeout(() => {
-          advanceFromPlayerIndex(0, currentPlayers);
-        }, 1800);
-      } else {
-        setTimeout(() => advanceFromPlayerIndex(playerIdx, currentPlayers), 1100);
-      }
+      setTileEventModalData({
+        player: p,
+        eventType: 'blood_tax',
+        details: {
+          title: '血税の生贄台',
+          description: `${p.name} は魔王への血税として所持霊貨の5%を強制献上しました。`,
+          amount: -tax,
+          prevGhosts,
+          newGhosts: p.ghosts
+        },
+        onConfirm: () => {
+          setTileEventModalData(null);
+          advanceToNextPlayer(playerIdx, currentPlayers);
+        },
+        isHuman: p.isHuman
+      });
     } else if (tile.type === 'curse_relic') {
-      // Relic: Draw a fate card directly
       const card = drawFateCard(p.isHuman, false);
-      if (p.isHuman) {
-        occultAudio.playCardReveal();
-        setIsCard100PercentUnlucky(false);
-        setCardDrawReason('relic');
-        setCurrentCard(card);
-      } else {
-        applyCardEffect(playerIdx, card);
-        setAiCardNotice({
-          playerName: p.name,
-          card,
-          is100PercentUnlucky: false,
-          reason: 'relic'
-        });
-        setTimeout(() => {
-          setAiCardNotice(null);
-          advanceFromPlayerIndex(playerIdx, currentPlayers);
-        }, 2000);
-      }
+      triggerCardEvent(playerIdx, card, 'relic', false, currentPlayers);
     } else if (tile.type === 'cryptid') {
       const cryptid = tile.cryptid!;
       const isOwned = tile.ownerId !== null;
@@ -506,131 +626,167 @@ export default function App() {
       const isOwnedByOther = isOwned && !isOwner;
 
       if (isOwnedByOther) {
-        // Requirement: ③ 他のプレイヤーとの同盟が結成されている場合は、怪異とのバトル（カードを引き、カード内容に従う。不運不運系１００％）
+        // Requirement: ③ 他のプレイヤーとの同盟が結成されている場合は、怪異とのバトル（カードを引き、カード内容に従う。不運系１００％）
         const owner = currentPlayers.find(pl => pl.id === tile.ownerId);
+        const tribute = cryptid.baseTribute;
+        p.ghosts -= tribute;
+        if (owner) owner.ghosts += tribute;
+
         addLog(
-          `⚔️ 領域侵犯！ ${p.name} は ${owner?.name} の盟友【${cryptid.name}】の縄張りに侵入！ 不運100%の迎撃バトルが発生！`,
+          `⚔️ 領域侵犯！ ${p.name} は ${owner?.name} の盟友【${cryptid.name}】に侵入！ 貢納 ${tribute.toLocaleString()} G と不運100%迎撃バトル！`,
           'battle',
           'text-red-400 font-bold'
         );
 
         const card = drawFateCard(p.isHuman, true); // Force 100% unlucky card!
-
-        if (p.isHuman) {
-          occultAudio.playBattleClash();
-          setIsCard100PercentUnlucky(true);
-          setCardDrawReason('invasion');
-          setCurrentCard(card);
-        } else {
-          // AI pays tribute and penalty
-          applyCardEffect(playerIdx, card);
-          const tribute = cryptid.baseTribute;
-          p.ghosts -= tribute;
-          if (owner) owner.ghosts += tribute;
-          addLog(`${p.name} は同盟主 ${owner?.name} に貢納 ${tribute} ゴーストを納付。`, 'battle');
-          setPlayers(currentPlayers);
-
-          setAiCardNotice({
-            playerName: p.name,
-            card,
-            is100PercentUnlucky: true,
-            reason: 'invasion'
-          });
-
-          setTimeout(() => {
-            setAiCardNotice(null);
-            advanceFromPlayerIndex(playerIdx, currentPlayers);
-          }, 2200);
-        }
+        triggerCardEvent(playerIdx, card, 'invasion', true, currentPlayers, cryptid.name, owner?.name, tribute);
       } else if (!isOwned) {
-        // Unallied Cryptid -> Choice: ① Alliance, ② Battle, ③ Pass
+        // Unallied Cryptid -> Choice: ① Alliance or ② Battle
         if (p.isHuman) {
           addLog(`📜 未契約の怪異【${cryptid.name}】(${cryptid.grade}) と遭遇！ 行動を選択してください。`, 'system', 'text-amber-200');
           setEncounterCryptid(cryptid);
         } else {
-          // AI self-interest decision logic:
+          // AI decision logic:
           const canAfford = p.ghosts >= cryptid.allianceCost;
-          const isFavorableInvestment = cryptid.allianceCost <= p.ghosts * 0.45 && p.ghosts > 1500;
+          const isFavorable = cryptid.allianceCost <= p.ghosts * 0.45 && p.ghosts > 1500;
 
-          if (canAfford && isFavorableInvestment) {
-            handleAIFormAlliance(playerIdx, tile.index);
+          if (canAfford && isFavorable) {
+            handleAIFormAlliance(playerIdx, tile.index, currentPlayers);
           } else {
-            handleAIBattle(playerIdx, cryptid.name);
+            const card = drawFateCard(false, false);
+            triggerCardEvent(playerIdx, card, 'battle', false, currentPlayers, cryptid.name);
           }
         }
       } else if (isOwner) {
         addLog(`${p.name} は自らの盟友怪異【${cryptid.name}】の領域で安息を得た。`, 'system', 'text-purple-300');
-        if (p.isHuman) {
-          setShowHumanPassTurnButton(true);
-          setTimeout(() => {
-            advanceFromPlayerIndex(0, currentPlayers);
-          }, 1800);
-        } else {
-          setTimeout(() => advanceFromPlayerIndex(playerIdx, currentPlayers), 1100);
-        }
+        setTileEventModalData({
+          player: p,
+          eventType: 'safe_cryptid',
+          details: {
+            title: `盟友怪異【${cryptid.name}】の領域`,
+            description: `${p.name} は自らの盟友怪異の領域で安息を得て、穏やかに霊力を保全しました。`
+          },
+          onConfirm: () => {
+            setTileEventModalData(null);
+            advanceToNextPlayer(playerIdx, currentPlayers);
+          },
+          isHuman: p.isHuman
+        });
       }
     }
   };
 
   // AI Alliance Formation
-  const handleAIFormAlliance = (playerIdx: number, tileIdx: number) => {
-    setBoard(prevBoard => {
-      const updatedBoard = [...prevBoard];
-      const targetTile = { ...updatedBoard[tileIdx] };
-      const cryptid = targetTile.cryptid;
-      if (!cryptid) return prevBoard;
+  const handleAIFormAlliance = (playerIdx: number, tileIdx: number, currentPlayers: PlayerState[]) => {
+    const updated = [...currentPlayers];
+    const p = updated[playerIdx];
+    const tile = board[tileIdx];
+    const cryptid = tile.cryptid!;
 
-      setPlayers(prevPlayers => {
-        const updatedPlayers = [...prevPlayers];
-        const ai = { ...updatedPlayers[playerIdx] };
+    p.ghosts -= cryptid.allianceCost;
+    p.alliancesCount += 1;
 
-        ai.ghosts -= cryptid.allianceCost;
-        ai.alliancesCount += 1;
-        targetTile.ownerId = ai.id;
-        updatedBoard[tileIdx] = targetTile;
+    setBoard(prev => {
+      const b = [...prev];
+      b[tileIdx] = { ...tile, ownerId: p.id };
+      return b;
+    });
 
-        occultAudio.playAllianceFormed();
-        addLog(
-          `🤝 【同盟締結】${ai.name} は魔王に費用 ${cryptid.allianceCost} G を払い、怪異【${cryptid.name}】と契約！`,
-          'alliance',
-          'text-purple-400 font-bold'
-        );
+    occultAudio.playAllianceFormed();
+    addLog(
+      `🤝 【AI同盟締結】${p.name} は魔王に費用 ${cryptid.allianceCost.toLocaleString()} G を払い、怪異【${cryptid.name}】と契約！`,
+      'alliance',
+      'text-purple-400 font-bold'
+    );
 
-        setTimeout(() => advanceFromPlayerIndex(playerIdx, updatedPlayers), 1200);
-        return updatedPlayers;
-      });
+    setPlayers(updated);
+    playersRef.current = updated;
 
-      return updatedBoard;
+    setTileEventModalData({
+      player: p,
+      eventType: 'safe_cryptid',
+      details: {
+        title: `${p.name} が怪異と同盟締結！`,
+        description: `悪魔 ${p.name} は怪異【${cryptid.name}】(${cryptid.grade}) と同盟を締結し、領地を獲得しました！`,
+        amount: -cryptid.allianceCost,
+        prevGhosts: p.ghosts + cryptid.allianceCost,
+        newGhosts: p.ghosts
+      },
+      onConfirm: () => {
+        setTileEventModalData(null);
+        advanceToNextPlayer(playerIdx, updated);
+      },
+      isHuman: false
     });
   };
 
-  // AI Battle
-  const handleAIBattle = (playerIdx: number, cryptidName: string) => {
-    addLog(`⚔️ ${players[playerIdx].name} は怪異【${cryptidName}】にバトルを挑んだ！`, 'battle');
-    const card = drawFateCard(false, false);
-    applyCardEffect(playerIdx, card);
+  // Human Choice ①: Form Alliance
+  const handleHumanFormAlliance = () => {
+    setEncounterCryptid(null);
+    const currentPlayers = [...playersRef.current];
+    const human = currentPlayers[0];
+    const tile = board[human.position];
+    const cryptid = tile.cryptid;
+    if (!cryptid || human.ghosts < cryptid.allianceCost) return;
 
-    setAiCardNotice({
-      playerName: players[playerIdx].name,
-      card,
-      is100PercentUnlucky: false,
-      reason: 'battle'
+    human.ghosts -= cryptid.allianceCost;
+    human.alliancesCount += 1;
+
+    setBoard(prev => {
+      const b = [...prev];
+      b[human.position] = { ...tile, ownerId: human.id };
+      return b;
     });
 
-    setTimeout(() => {
-      setAiCardNotice(null);
-      advanceFromPlayerIndex(playerIdx, players);
-    }, 2000);
+    occultAudio.playAllianceFormed();
+    addLog(
+      `🤝 【同盟締結】契約者 ${human.name} は魔王へ ${cryptid.allianceCost.toLocaleString()} G を納付し、怪異【${cryptid.name}】と同盟成立！`,
+      'alliance',
+      'text-emerald-400 font-black'
+    );
+
+    currentPlayers[0] = human;
+    setPlayers(currentPlayers);
+    playersRef.current = currentPlayers;
+
+    setTileEventModalData({
+      player: human,
+      eventType: 'safe_cryptid',
+      details: {
+        title: `怪異【${cryptid.name}】と同盟締結！`,
+        description: `契約料 ${cryptid.allianceCost.toLocaleString()} G を魔王へ納入し、このマスをあなたの支配領域としました。他者が進入した際は基本貢納金 +${cryptid.baseTribute.toLocaleString()} G を獲得します！`,
+        amount: -cryptid.allianceCost,
+        prevGhosts: human.ghosts + cryptid.allianceCost,
+        newGhosts: human.ghosts
+      },
+      onConfirm: () => {
+        setTileEventModalData(null);
+        advanceToNextPlayer(0, currentPlayers);
+      },
+      isHuman: true
+    });
+  };
+
+  // Human Choice ②: Battle with Cryptid (Fate card)
+  const handleHumanBattleCryptid = () => {
+    setEncounterCryptid(null);
+    const currentPlayers = playersRef.current;
+    const human = currentPlayers[0];
+    const tile = board[human.position];
+    const cryptid = tile.cryptid;
+
+    addLog(`⚔️ 契約者 ${human.name} は怪異【${cryptid?.name}】にバトルを挑んだ！`, 'battle');
+    const card = drawFateCard(true, false);
+    triggerCardEvent(0, card, 'battle', false, currentPlayers, cryptid?.name);
   };
 
   // Pause / Resume / Quit game flow handlers
   const handlePauseGame = () => {
     setIsPaused(true);
-    if (aiTimeoutRef.current) {
-      clearTimeout(aiTimeoutRef.current);
-      aiTimeoutRef.current = null;
+    if (aiTimerRef.current) {
+      clearTimeout(aiTimerRef.current);
+      aiTimerRef.current = null;
     }
-    isAITurnRunningRef.current = false;
     addLog('⏸ 【儀式一時中断】時の刻みが停止しました。', 'system', 'text-amber-300 font-bold');
   };
 
@@ -643,181 +799,37 @@ export default function App() {
     setIsPaused(false);
     setIsGameStarted(false);
     setIsGameOver(false);
-    setShowHumanPassTurnButton(false);
     setEncounterCryptid(null);
-    setCurrentCard(null);
-    setAiCardNotice(null);
-    isAITurnRunningRef.current = false;
+    setCardModalData(null);
+    setTileEventModalData(null);
 
-    // Stop Occult BGM when quitting game
     occultAudio.stopOccultBGM();
 
-    if (aiTimeoutRef.current) {
-      clearTimeout(aiTimeoutRef.current);
-      aiTimeoutRef.current = null;
+    if (aiTimerRef.current) {
+      clearTimeout(aiTimerRef.current);
+      aiTimerRef.current = null;
     }
     addLog('◆ 儀式を破棄し、初期契約画面へ回帰しました。', 'system', 'text-white/60');
-  };
-
-  // Human Choice ①: Form Alliance
-  const handleHumanFormAlliance = () => {
-    setEncounterCryptid(null);
-    const p = players[0];
-    const tile = board[p.position];
-    const cryptid = tile.cryptid;
-    if (!cryptid || p.ghosts < cryptid.allianceCost) return;
-
-    setBoard(prevBoard => {
-      const updatedBoard = [...prevBoard];
-      const targetTile = { ...updatedBoard[p.position] };
-      targetTile.ownerId = p.id;
-      updatedBoard[p.position] = targetTile;
-      return updatedBoard;
-    });
-
-    setPlayers(prevPlayers => {
-      const updated = [...prevPlayers];
-      const human = { ...updated[0] };
-      human.ghosts -= cryptid.allianceCost;
-      human.alliancesCount += 1;
-      updated[0] = human;
-
-      occultAudio.playAllianceFormed();
-      addLog(
-        `🤝 【同盟締結】契約者 ${human.name} はバンカー魔王へ ${cryptid.allianceCost} G を納付し、怪異【${cryptid.name}】と同盟成立！`,
-        'alliance',
-        'text-emerald-400 font-black'
-      );
-
-      advanceFromPlayerIndex(0, updated);
-      return updated;
-    });
-  };
-
-  // Human Choice ②: Battle with Cryptid (Fate card)
-  const handleHumanBattleCryptid = () => {
-    setEncounterCryptid(null);
-    const p = players[0];
-    const tile = board[p.position];
-    const isOwnedByOther = tile.ownerId !== null && tile.ownerId !== p.id;
-
-    occultAudio.playBattleClash();
-    const card = drawFateCard(true, isOwnedByOther);
-    setIsCard100PercentUnlucky(isOwnedByOther);
-    setCardDrawReason(isOwnedByOther ? 'invasion' : 'battle');
-    setCurrentCard(card);
-  };
-
-  // Human Choice ③: Pass Encounter
-  const handleHumanPassEncounter = () => {
-    setEncounterCryptid(null);
-    addLog(`契約者 ${players[0]?.name} は怪異との接触を避け、その場を静かに立ち去った。`, 'system');
-    advanceFromPlayerIndex(0, players);
-  };
-
-  // Apply Fate Card Effect
-  const applyCardEffect = (playerIdx: number, card: OccultCard) => {
-    const boardLen = board.length;
-
-    setPlayers(prevPlayers => {
-      const updated = [...prevPlayers];
-      const p = { ...updated[playerIdx] };
-
-      if (card.type === 'lucky') {
-        if (card.category === 'plunder') {
-          // Plunder from everyone else
-          updated.forEach((other, oIdx) => {
-            if (oIdx !== playerIdx && !other.isBankrupt) {
-              const stealAmount = Math.min(other.ghosts, card.effectValue);
-              other.ghosts -= stealAmount;
-              p.ghosts += stealAmount;
-            }
-          });
-          occultAudio.playCoin();
-        } else if (card.category === 'teleport') {
-          p.position = (p.position + card.effectValue) % boardLen;
-        } else {
-          p.ghosts += card.effectValue;
-          occultAudio.playCoin();
-        }
-        addLog(`✨ 【幸運の加護】${p.name} は『${card.title}』により霊貨+${card.effectValue} G！`, 'card', 'text-emerald-400 font-bold');
-      } else {
-        // Unlucky
-        if (card.category === 'teleport') {
-          p.position = (p.position + card.effectValue + boardLen) % boardLen;
-        } else {
-          p.ghosts -= card.effectValue;
-        }
-        addLog(`💀 【厄災の呪縛】${p.name} は『${card.title}』により損害-${card.effectValue} G！`, 'card', 'text-rose-400 font-bold');
-
-        if (p.ghosts < 0) {
-          p.isBankrupt = true;
-          p.ghosts = 0;
-          addLog(`💀 ${p.name} は怪異の呪縛により全財産を喪失し破産消滅した！`, 'bankruptcy', 'text-red-500 font-bold');
-        }
-      }
-
-      updated[playerIdx] = p;
-      return updated;
-    });
-  };
-
-  // Close Card Modal and Proceed Turn for Human
-  const handleCardModalConfirm = () => {
-    if (!currentCard) return;
-    const card = currentCard;
-    setCurrentCard(null);
-
-    applyCardEffect(0, card);
-
-    // Check if tribute needed if tile was owned by other
-    const tile = board[players[0].position];
-    if (tile.ownerId && tile.ownerId !== players[0].id && tile.cryptid) {
-      setPlayers(prev => {
-        const updated = [...prev];
-        const human = { ...updated[0] };
-        const owner = updated.find(pl => pl.id === tile.ownerId);
-        const tribute = tile.cryptid!.baseTribute;
-
-        human.ghosts -= tribute;
-        if (owner) owner.ghosts += tribute;
-        addLog(`領域侵犯の賠償として同盟主 ${owner?.name} へ貢納 ${tribute} G を支払いました。`, 'battle', 'text-red-300');
-
-        if (human.ghosts < 0) {
-          human.isBankrupt = true;
-          human.ghosts = 0;
-          addLog(`💀 契約者 ${human.name} は貢納金を払えず破産した！`, 'bankruptcy', 'text-red-500 font-black');
-        }
-
-        updated[0] = human;
-        advanceFromPlayerIndex(0, updated);
-        return updated;
-      });
-    } else {
-      setTimeout(() => advanceFromPlayerIndex(0, players), 300);
-    }
   };
 
   // AI Turn Execution Effect - Orchestrates 4 players rolling in strict sequence
   useEffect(() => {
     if (!isGameStarted || isGameOver || isPaused) return;
 
-    const activePlayer = players[activePlayerIndex];
+    const currentList = playersRef.current;
+    const activePlayer = currentList[activePlayerIndex];
     if (!activePlayer || activePlayer.isHuman || activePlayer.isBankrupt) {
       return;
     }
 
-    // Guard against duplicate execution
-    if (isAITurnRunningRef.current) return;
-    isAITurnRunningRef.current = true;
+    // AI rolls dice after 1.1s
+    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
 
-    // AI Turn automation with clear dice rolling visual and delay
-    aiTimeoutRef.current = setTimeout(() => {
-      // AI rolls dice: triggers rolling state & sound
+    aiTimerRef.current = setTimeout(() => {
       setIsRolling(true);
       occultAudio.playDiceRoll();
 
-      aiTimeoutRef.current = setTimeout(() => {
+      aiTimerRef.current = setTimeout(() => {
         const roll = Math.floor(Math.random() * 6) + 1;
         setLastRoll(roll);
         setIsRolling(false);
@@ -827,9 +839,9 @@ export default function App() {
     }, 1100);
 
     return () => {
-      if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+      if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     };
-  }, [activePlayerIndex, isGameStarted, isGameOver, isPaused, players]);
+  }, [activePlayerIndex, isGameStarted, isGameOver, isPaused]);
 
   // If on admin route, show Admin Panel
   if (currentRoute === 'admin') {
@@ -886,7 +898,7 @@ export default function App() {
               : 'w-full h-[48vh] overflow-y-auto space-y-2'
           }`}
         >
-          {/* Tile Inspector (Shows Cryptid details, Alliance & Battle options) */}
+          {/* Tile Inspector (Shows Cryptid details, lore, and tribute rates) */}
           <div className={`${deviceMode === 'tablet' ? 'h-full' : 'max-h-[300px] sm:max-h-[340px] flex-shrink-0'}`}>
             <TileInspector
               tile={currentTile}
@@ -896,7 +908,6 @@ export default function App() {
               isLandedOn={Boolean(isLandedOnSelected)}
               onFormAlliance={handleHumanFormAlliance}
               onBattleCryptid={handleHumanBattleCryptid}
-              onPassSpecialTile={() => advanceFromPlayerIndex(0, players)}
             />
           </div>
 
@@ -922,19 +933,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Floating Fast Next Turn button for human on neutral/safe tiles */}
-      {showHumanPassTurnButton && !isRolling && (
-        <div className="fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-40 animate-bounce">
-          <button
-            onClick={() => advanceFromPlayerIndex(0, players)}
-            className="px-6 py-2.5 rounded-full bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white font-bold shadow-2xl border border-purple-400 flex items-center gap-2 cursor-pointer text-sm"
-          >
-            <span>▶ 次の手番へ進む</span>
-            <span className="text-[10px] text-purple-200 opacity-80">(自動進行中)</span>
-          </button>
-        </div>
-      )}
-
       {/* Unallied Cryptid Encounter Modal for Human */}
       {encounterCryptid && players[0] && (
         <CryptidEncounterModal
@@ -942,27 +940,29 @@ export default function App() {
           player={players[0]}
           onAlliance={handleHumanFormAlliance}
           onBattle={handleHumanBattleCryptid}
-          onPass={handleHumanPassEncounter}
         />
       )}
 
-      {/* Occult Fate Card Modal */}
-      {currentCard && (
+      {/* Dramatic Occult Fate Card Modal (For BOTH Human & AI) */}
+      {cardModalData && (
         <CardModal
-          card={currentCard}
-          is100PercentUnlucky={isCard100PercentUnlucky}
-          reason={cardDrawReason}
-          onConfirm={handleCardModalConfirm}
+          card={cardModalData.card}
+          player={cardModalData.player}
+          is100PercentUnlucky={cardModalData.is100PercentUnlucky}
+          reason={cardModalData.reason}
+          resultInfo={cardModalData.resultInfo}
+          onConfirm={cardModalData.onConfirm}
         />
       )}
 
-      {/* Broadcast notice when AI draws a card */}
-      {aiCardNotice && (
-        <AICardNotice
-          playerName={aiCardNotice.playerName}
-          card={aiCardNotice.card}
-          is100PercentUnlucky={aiCardNotice.is100PercentUnlucky}
-          reason={aiCardNotice.reason}
+      {/* Tile Event Modal (Start altar, Blood tax, Safe territory, Rift) */}
+      {tileEventModalData && (
+        <TileEventModal
+          player={tileEventModalData.player}
+          eventType={tileEventModalData.eventType}
+          details={tileEventModalData.details}
+          onConfirm={tileEventModalData.onConfirm}
+          isHuman={tileEventModalData.isHuman}
         />
       )}
 
