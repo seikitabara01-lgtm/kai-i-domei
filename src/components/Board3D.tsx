@@ -12,35 +12,39 @@ interface Board3DProps {
   cameraView: 'dynamic' | 'overview' | 'topdown';
 }
 
-// Convert board index (0..19) to 3D coordinates on board
+// Convert board index (0..35, 10 tiles per side) to 3D coordinates on board
+// Left turn / Counter-clockwise motion:
+// Bottom edge: moves from Right to Left (X: +size/2 to -size/2, Z: +size/2)
+// Left edge: moves from Bottom to Top (X: -size/2, Z: +size/2 to -size/2)
+// Top edge: moves from Left to Right (X: -size/2 to +size/2, Z: -size/2)
+// Right edge: moves from Top to Bottom (X: +size/2, Z: -size/2 to +size/2)
 export function getTile3DPosition(index: number): { x: number; z: number } {
-  const size = 6.4;
-  const step = size / 5;
+  const size = 11.2;
+  const step = size / 9; // 9 intervals for 10 tiles per side
 
-  if (index >= 0 && index <= 5) {
-    // Bottom edge: index 0 is at (size/2, size/2) -> wait, index 0 is START corner
-    // Let's place index 0 at bottom-left corner (-size/2, size/2)
+  if (index >= 0 && index <= 9) {
+    // Edge 1 (Bottom): Right to Left (Counter-clockwise progression)
     return {
-      x: -size / 2 + index * step,
+      x: size / 2 - index * step,
       z: size / 2
     };
-  } else if (index > 5 && index <= 10) {
-    // Right edge
+  } else if (index > 9 && index <= 18) {
+    // Edge 2 (Left): Bottom to Top
     return {
-      x: size / 2,
-      z: size / 2 - (index - 5) * step
+      x: -size / 2,
+      z: size / 2 - (index - 9) * step
     };
-  } else if (index > 10 && index <= 15) {
-    // Top edge
+  } else if (index > 18 && index <= 27) {
+    // Edge 3 (Top): Left to Right
     return {
-      x: size / 2 - (index - 10) * step,
+      x: -size / 2 + (index - 18) * step,
       z: -size / 2
     };
   } else {
-    // Left edge
+    // Edge 4 (Right): Top to Bottom, leading back to START (index 0)
     return {
-      x: -size / 2,
-      z: -size / 2 + (index - 15) * step
+      x: size / 2,
+      z: -size / 2 + (index - 27) * step
     };
   }
 }
@@ -71,7 +75,7 @@ export const Board3D: React.FC<Board3DProps> = ({
   // Mouse interaction state
   const isDraggingRef = useRef(false);
   const previousMousePositionRef = useRef({ x: 0, y: 0 });
-  const cameraAngleRef = useRef({ theta: Math.PI / 4, phi: Math.PI / 3, radius: 14 });
+  const cameraAngleRef = useRef({ theta: 0.05, phi: Math.PI / 3.4, radius: 18.5 });
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -87,7 +91,7 @@ export const Board3D: React.FC<Board3DProps> = ({
 
     // Camera setup
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.set(0, 11, 11);
+    camera.position.set(0, 14, 16);
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
@@ -106,19 +110,19 @@ export const Board3D: React.FC<Board3DProps> = ({
 
     // Blood Moon directional light
     const bloodMoonLight = new THREE.DirectionalLight(0xd946ef, 2.2);
-    bloodMoonLight.position.set(6, 14, 8);
+    bloodMoonLight.position.set(8, 16, 10);
     bloodMoonLight.castShadow = true;
     bloodMoonLight.shadow.mapSize.width = 1024;
     bloodMoonLight.shadow.mapSize.height = 1024;
     scene.add(bloodMoonLight);
 
     // Center demonic glow
-    const centerPointLight = new THREE.PointLight(0xef4444, 3.5, 12);
+    const centerPointLight = new THREE.PointLight(0xef4444, 3.5, 15);
     centerPointLight.position.set(0, 1.5, 0);
     scene.add(centerPointLight);
 
     // Board Foundation Slab
-    const baseGeo = new THREE.CylinderGeometry(6.2, 6.5, 0.4, 32);
+    const baseGeo = new THREE.CylinderGeometry(8.6, 9.2, 0.4, 36);
     const baseMat = new THREE.MeshStandardMaterial({
       color: 0x130e24,
       roughness: 0.8,
@@ -169,14 +173,14 @@ export const Board3D: React.FC<Board3DProps> = ({
 
     scene.add(centerGroup);
 
-    // Create 20 Board Tiles
+    // Create 36 Board Tiles (10 tiles per side)
     tileMeshesRef.current = [];
     board.forEach((tile, index) => {
       const pos = getTile3DPosition(index);
-      const isCorner = index % 5 === 0;
+      const isCorner = index % 9 === 0;
 
-      const tileWidth = isCorner ? 1.4 : 1.1;
-      const tileLength = isCorner ? 1.4 : 1.1;
+      const tileWidth = isCorner ? 1.35 : 1.02;
+      const tileLength = isCorner ? 1.35 : 1.02;
       const tileGeo = new THREE.BoxGeometry(tileWidth, 0.2, tileLength);
 
       let tileColor = 0x22183d;

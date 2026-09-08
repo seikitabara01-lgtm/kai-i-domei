@@ -20,6 +20,8 @@ import { Board3D } from './components/Board3D';
 import { PlayerHUD } from './components/PlayerHUD';
 import { TileInspector } from './components/TileInspector';
 import { CardModal } from './components/CardModal';
+import { CryptidEncounterModal } from './components/CryptidEncounterModal';
+import { AICardNotice } from './components/AICardNotice';
 import { GameSetup } from './components/GameSetup';
 import { GameOverModal } from './components/GameOverModal';
 import { MatchHistoryModal } from './components/MatchHistoryModal';
@@ -27,6 +29,7 @@ import { PauseModal } from './components/PauseModal';
 import { AdminPanel } from './components/AdminPanel';
 import { GitHubIntegrationModal } from './components/GitHubIntegrationModal';
 import { occultAudio } from './utils/occultAudio';
+import { Cryptid } from './types';
 
 export default function App() {
   const { deviceMode } = useDeviceMode();
@@ -64,8 +67,23 @@ export default function App() {
   const [lastRoll, setLastRoll] = useState<number | null>(null);
   const [roundsCount, setRoundsCount] = useState(1);
   const [currentCard, setCurrentCard] = useState<OccultCard | null>(null);
+  const [cardDrawReason, setCardDrawReason] = useState<string>('relic');
   const [isCard100PercentUnlucky, setIsCard100PercentUnlucky] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+
+  // Encounter modal for human player landing on unowned cryptid
+  const [encounterCryptid, setEncounterCryptid] = useState<Cryptid | null>(null);
+
+  // AI Card broadcast notice
+  const [aiCardNotice, setAiCardNotice] = useState<{
+    playerName: string;
+    card: OccultCard;
+    is100PercentUnlucky: boolean;
+    reason: string;
+  } | null>(null);
+
+  // Manual next turn button visibility for human on safe/neutral tiles
+  const [showHumanPassTurnButton, setShowHumanPassTurnButton] = useState(false);
 
   // Modals
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -76,8 +94,9 @@ export default function App() {
   // Logs
   const [gameLogs, setGameLogs] = useState<GameLog[]>([]);
 
-  // Ref to track game loop timeout for cleanup
+  // Ref to track game loop timeout for cleanup and prevent concurrent AI execution
   const aiTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isAITurnRunningRef = useRef<boolean>(false);
 
   const addLog = useCallback((text: string, type: GameLog['type'] = 'system', color?: string) => {
     const time = new Date().toLocaleTimeString('ja-JP', { hour12: false });
@@ -271,68 +290,86 @@ export default function App() {
   // Finish game
   const triggerGameOver = useCallback((finalPlayers: PlayerState[]) => {
     setIsGameOver(true);
+    // Stop Occult BGM immediately when game ends
+    occultAudio.stopOccultBGM();
+
     submitMatchToServer(finalPlayers);
     const winner = [...finalPlayers].sort((a, b) => b.ghosts - a.ghosts)[0];
     addLog(`【儀式終了】勝者: ${winner?.name}！ 全記録はサーバーに保存されました。`, 'system', 'text-amber-400 font-black');
   }, [submitMatchToServer, addLog]);
 
-  // Switch Turn to Next Living Player
-  const advanceToNextPlayer = useCallback((updatedPlayers: PlayerState[]) => {
-    if (checkGameOverCondition(updatedPlayers)) {
-      triggerGameOver(updatedPlayers);
+  // Switch Turn to Next Living Player reliably
+  const advanceFromPlayerIndex = useCallback((fromPlayerIndex: number, currentPlayersList?: PlayerState[]) => {
+    isAITurnRunningRef.current = false;
+    setShowHumanPassTurnButton(false);
+    setEncounterCryptid(null);
+
+    const list = currentPlayersList || players;
+    if (checkGameOverCondition(list)) {
+      triggerGameOver(list);
       return;
     }
 
-    let nextIdx = (activePlayerIndex + 1) % updatedPlayers.length;
+    let nextIdx = (fromPlayerIndex + 1) % list.length;
     let attempts = 0;
-    while (updatedPlayers[nextIdx].isBankrupt && attempts < updatedPlayers.length) {
-      nextIdx = (nextIdx + 1) % updatedPlayers.length;
+    while (list[nextIdx]?.isBankrupt && attempts < list.length) {
+      nextIdx = (nextIdx + 1) % list.length;
       attempts++;
     }
 
     setActivePlayerIndex(nextIdx);
-    setSelectedTileIndex(updatedPlayers[nextIdx].position);
+    setSelectedTileIndex(list[nextIdx].position);
 
     if (nextIdx === 0) {
       setRoundsCount(r => r + 1);
     }
 
-    if (updatedPlayers[nextIdx].isHuman) {
+    if (list[nextIdx].isHuman) {
       setCanRoll(true);
+      addLog(`✨ あなたの手番です。サイコロを振ってください。`, 'system', 'text-amber-300 font-bold');
+    } else {
+      setCanRoll(false);
     }
-  }, [activePlayerIndex, checkGameOverCondition, triggerGameOver]);
+  }, [players, checkGameOverCondition, triggerGameOver, addLog]);
 
-  // Dice Roll Logic
+  // Compatibility alias
+  const advanceToNextPlayer = advanceFromPlayerIndex;
+
+  // Dice Roll Logic for Human
   const handleRollDice = () => {
     if (!canRoll || isRolling || isPaused) return;
 
     setIsRolling(true);
     setCanRoll(false);
+    setShowHumanPassTurnButton(false);
     occultAudio.playDiceRoll();
 
     setTimeout(() => {
       const roll = Math.floor(Math.random() * 6) + 1;
       setLastRoll(roll);
       setIsRolling(false);
+      addLog(`🎲 あなたがサイコロを振った: [${roll}]`, 'roll', 'text-amber-300 font-bold');
 
-      executeMovement(activePlayerIndex, roll);
-    }, 900);
+      executeMovement(0, roll);
+    }, 850);
   };
 
-  // Movement along the 20-tile board and lap interest logic
+  // Movement along the board (supports 36 tiles or dynamic length) and lap interest logic
   const executeMovement = (playerIdx: number, steps: number) => {
+    const boardLen = board.length;
+
     setPlayers(prev => {
       const updated = [...prev];
       const p = { ...updated[playerIdx] };
       const oldPos = p.position;
-      const newPos = (oldPos + steps) % 20;
+      const newPos = (oldPos + steps) % boardLen;
 
       p.position = newPos;
       p.lastDiceRoll = steps;
       setSelectedTileIndex(newPos);
 
       // Check if player passed or landed on START (tile 0) -> Completed a lap
-      const passedStart = (oldPos + steps) >= 20;
+      const passedStart = (oldPos + steps) >= boardLen;
       if (passedStart) {
         p.laps += 1;
         const interestDue = calculateLapInterest(p.laps);
@@ -354,13 +391,14 @@ export default function App() {
       }
 
       updated[playerIdx] = p;
+
+      // Evaluate tile landed on after short movement delay
+      setTimeout(() => {
+        evaluateTileLanding(playerIdx, updated);
+      }, 500);
+
       return updated;
     });
-
-    // Evaluate tile landed on after short delay
-    setTimeout(() => {
-      evaluateTileLanding(playerIdx);
-    }, 600);
   };
 
   // Draw an Occult Card based on Difficulty and Cryptid Grade
@@ -393,27 +431,37 @@ export default function App() {
   };
 
   // Evaluate Landing on a tile
-  const evaluateTileLanding = (playerIdx: number) => {
-    const currentPlayers = [...players];
+  const evaluateTileLanding = (playerIdx: number, playersSnapshot?: PlayerState[]) => {
+    const currentPlayers = playersSnapshot ? [...playersSnapshot] : [...players];
     const p = currentPlayers[playerIdx];
-    if (p.isBankrupt) {
-      advanceToNextPlayer(currentPlayers);
+    if (!p || p.isBankrupt) {
+      advanceFromPlayerIndex(playerIdx, currentPlayers);
       return;
     }
 
     const tile = board[p.position];
+    if (!tile) {
+      advanceFromPlayerIndex(playerIdx, currentPlayers);
+      return;
+    }
 
     if (tile.type === 'start') {
       addLog(`${p.name} は魔王の祭壇に立ち止まった。静寂が霊力を保全する。`, 'system');
-      if (!p.isHuman) {
-        setTimeout(() => advanceToNextPlayer(currentPlayers), 800);
+      if (p.isHuman) {
+        setShowHumanPassTurnButton(true);
+        // Automatically progress after 1.8s or player can click button
+        setTimeout(() => {
+          advanceFromPlayerIndex(0, currentPlayers);
+        }, 1800);
+      } else {
+        setTimeout(() => advanceFromPlayerIndex(playerIdx, currentPlayers), 1100);
       }
     } else if (tile.type === 'occult_rift') {
       // Occult rift: warp forward 2 tiles
       addLog(`🌀 異界の特異点！ ${p.name} は時空を跳躍し前方のマスへ歪曲移動！`, 'system', 'text-indigo-400');
       setTimeout(() => {
         executeMovement(playerIdx, 2);
-      }, 500);
+      }, 600);
     } else if (tile.type === 'blood_tax') {
       // 5% Tax to Demon King
       const tax = Math.max(100, Math.floor(p.ghosts * 0.05));
@@ -421,8 +469,14 @@ export default function App() {
       occultAudio.playCoin();
       addLog(`🩸 血税の生贄台！ ${p.name} は魔王へ霊血税 ${tax} ゴーストを強制献上した。`, 'system', 'text-rose-400');
       setPlayers(currentPlayers);
-      if (!p.isHuman) {
-        setTimeout(() => advanceToNextPlayer(currentPlayers), 800);
+
+      if (p.isHuman) {
+        setShowHumanPassTurnButton(true);
+        setTimeout(() => {
+          advanceFromPlayerIndex(0, currentPlayers);
+        }, 1800);
+      } else {
+        setTimeout(() => advanceFromPlayerIndex(playerIdx, currentPlayers), 1100);
       }
     } else if (tile.type === 'curse_relic') {
       // Relic: Draw a fate card directly
@@ -430,10 +484,20 @@ export default function App() {
       if (p.isHuman) {
         occultAudio.playCardReveal();
         setIsCard100PercentUnlucky(false);
+        setCardDrawReason('relic');
         setCurrentCard(card);
       } else {
         applyCardEffect(playerIdx, card);
-        setTimeout(() => advanceToNextPlayer(players), 900);
+        setAiCardNotice({
+          playerName: p.name,
+          card,
+          is100PercentUnlucky: false,
+          reason: 'relic'
+        });
+        setTimeout(() => {
+          setAiCardNotice(null);
+          advanceFromPlayerIndex(playerIdx, currentPlayers);
+        }, 2000);
       }
     } else if (tile.type === 'cryptid') {
       const cryptid = tile.cryptid!;
@@ -455,31 +519,38 @@ export default function App() {
         if (p.isHuman) {
           occultAudio.playBattleClash();
           setIsCard100PercentUnlucky(true);
+          setCardDrawReason('invasion');
           setCurrentCard(card);
         } else {
           // AI pays tribute and penalty
           applyCardEffect(playerIdx, card);
-          // Also pay tribute to owner
           const tribute = cryptid.baseTribute;
           p.ghosts -= tribute;
           if (owner) owner.ghosts += tribute;
           addLog(`${p.name} は同盟主 ${owner?.name} に貢納 ${tribute} ゴーストを納付。`, 'battle');
           setPlayers(currentPlayers);
-          setTimeout(() => advanceToNextPlayer(currentPlayers), 1000);
+
+          setAiCardNotice({
+            playerName: p.name,
+            card,
+            is100PercentUnlucky: true,
+            reason: 'invasion'
+          });
+
+          setTimeout(() => {
+            setAiCardNotice(null);
+            advanceFromPlayerIndex(playerIdx, currentPlayers);
+          }, 2200);
         }
       } else if (!isOwned) {
-        // Unallied Cryptid -> Choice: ① Alliance, ② Battle
+        // Unallied Cryptid -> Choice: ① Alliance, ② Battle, ③ Pass
         if (p.isHuman) {
-          addLog(`📜 未契約の怪異【${cryptid.name}】(${cryptid.grade}) と遭遇！ ①同盟締結 か ②バトル を選択してください。`, 'system', 'text-amber-200');
-          // Waits for Human button click in TileInspector
+          addLog(`📜 未契約の怪異【${cryptid.name}】(${cryptid.grade}) と遭遇！ 行動を選択してください。`, 'system', 'text-amber-200');
+          setEncounterCryptid(cryptid);
         } else {
           // AI self-interest decision logic:
-          // "但し、AI３体は共同して人間を狙うことは禁止。各AIは、自身の勝利を目指す。"
-          // Each AI evaluates:
-          // If alliance cost <= 40% of their current ghosts and ghosts > 1500: forms alliance to secure income!
-          // Otherwise battles cryptid to preserve liquidity.
           const canAfford = p.ghosts >= cryptid.allianceCost;
-          const isFavorableInvestment = cryptid.allianceCost <= p.ghosts * 0.42 && p.ghosts > 1800;
+          const isFavorableInvestment = cryptid.allianceCost <= p.ghosts * 0.45 && p.ghosts > 1500;
 
           if (canAfford && isFavorableInvestment) {
             handleAIFormAlliance(playerIdx, tile.index);
@@ -489,8 +560,13 @@ export default function App() {
         }
       } else if (isOwner) {
         addLog(`${p.name} は自らの盟友怪異【${cryptid.name}】の領域で安息を得た。`, 'system', 'text-purple-300');
-        if (!p.isHuman) {
-          setTimeout(() => advanceToNextPlayer(currentPlayers), 800);
+        if (p.isHuman) {
+          setShowHumanPassTurnButton(true);
+          setTimeout(() => {
+            advanceFromPlayerIndex(0, currentPlayers);
+          }, 1800);
+        } else {
+          setTimeout(() => advanceFromPlayerIndex(playerIdx, currentPlayers), 1100);
         }
       }
     }
@@ -520,7 +596,7 @@ export default function App() {
           'text-purple-400 font-bold'
         );
 
-        setTimeout(() => advanceToNextPlayer(updatedPlayers), 1100);
+        setTimeout(() => advanceFromPlayerIndex(playerIdx, updatedPlayers), 1200);
         return updatedPlayers;
       });
 
@@ -533,7 +609,18 @@ export default function App() {
     addLog(`⚔️ ${players[playerIdx].name} は怪異【${cryptidName}】にバトルを挑んだ！`, 'battle');
     const card = drawFateCard(false, false);
     applyCardEffect(playerIdx, card);
-    setTimeout(() => advanceToNextPlayer(players), 1100);
+
+    setAiCardNotice({
+      playerName: players[playerIdx].name,
+      card,
+      is100PercentUnlucky: false,
+      reason: 'battle'
+    });
+
+    setTimeout(() => {
+      setAiCardNotice(null);
+      advanceFromPlayerIndex(playerIdx, players);
+    }, 2000);
   };
 
   // Pause / Resume / Quit game flow handlers
@@ -543,6 +630,7 @@ export default function App() {
       clearTimeout(aiTimeoutRef.current);
       aiTimeoutRef.current = null;
     }
+    isAITurnRunningRef.current = false;
     addLog('⏸ 【儀式一時中断】時の刻みが停止しました。', 'system', 'text-amber-300 font-bold');
   };
 
@@ -555,6 +643,15 @@ export default function App() {
     setIsPaused(false);
     setIsGameStarted(false);
     setIsGameOver(false);
+    setShowHumanPassTurnButton(false);
+    setEncounterCryptid(null);
+    setCurrentCard(null);
+    setAiCardNotice(null);
+    isAITurnRunningRef.current = false;
+
+    // Stop Occult BGM when quitting game
+    occultAudio.stopOccultBGM();
+
     if (aiTimeoutRef.current) {
       clearTimeout(aiTimeoutRef.current);
       aiTimeoutRef.current = null;
@@ -564,6 +661,7 @@ export default function App() {
 
   // Human Choice ①: Form Alliance
   const handleHumanFormAlliance = () => {
+    setEncounterCryptid(null);
     const p = players[0];
     const tile = board[p.position];
     const cryptid = tile.cryptid;
@@ -591,13 +689,14 @@ export default function App() {
         'text-emerald-400 font-black'
       );
 
-      advanceToNextPlayer(updated);
+      advanceFromPlayerIndex(0, updated);
       return updated;
     });
   };
 
-  // Human Choice ② & ③: Battle with Cryptid (Fate card)
+  // Human Choice ②: Battle with Cryptid (Fate card)
   const handleHumanBattleCryptid = () => {
+    setEncounterCryptid(null);
     const p = players[0];
     const tile = board[p.position];
     const isOwnedByOther = tile.ownerId !== null && tile.ownerId !== p.id;
@@ -605,11 +704,21 @@ export default function App() {
     occultAudio.playBattleClash();
     const card = drawFateCard(true, isOwnedByOther);
     setIsCard100PercentUnlucky(isOwnedByOther);
+    setCardDrawReason(isOwnedByOther ? 'invasion' : 'battle');
     setCurrentCard(card);
+  };
+
+  // Human Choice ③: Pass Encounter
+  const handleHumanPassEncounter = () => {
+    setEncounterCryptid(null);
+    addLog(`契約者 ${players[0]?.name} は怪異との接触を避け、その場を静かに立ち去った。`, 'system');
+    advanceFromPlayerIndex(0, players);
   };
 
   // Apply Fate Card Effect
   const applyCardEffect = (playerIdx: number, card: OccultCard) => {
+    const boardLen = board.length;
+
     setPlayers(prevPlayers => {
       const updated = [...prevPlayers];
       const p = { ...updated[playerIdx] };
@@ -626,20 +735,20 @@ export default function App() {
           });
           occultAudio.playCoin();
         } else if (card.category === 'teleport') {
-          p.position = (p.position + card.effectValue) % 20;
+          p.position = (p.position + card.effectValue) % boardLen;
         } else {
           p.ghosts += card.effectValue;
           occultAudio.playCoin();
         }
-        addLog(`✨ 【幸運の加護】${p.name} は『${card.title}』により霊貨+${card.effectValue} G！`, 'card', 'text-emerald-400');
+        addLog(`✨ 【幸運の加護】${p.name} は『${card.title}』により霊貨+${card.effectValue} G！`, 'card', 'text-emerald-400 font-bold');
       } else {
         // Unlucky
         if (card.category === 'teleport') {
-          p.position = (p.position + card.effectValue + 20) % 20;
+          p.position = (p.position + card.effectValue + boardLen) % boardLen;
         } else {
           p.ghosts -= card.effectValue;
         }
-        addLog(`💀 【厄災の呪縛】${p.name} は『${card.title}』により損害-${card.effectValue} G！`, 'card', 'text-rose-400');
+        addLog(`💀 【厄災の呪縛】${p.name} は『${card.title}』により損害-${card.effectValue} G！`, 'card', 'text-rose-400 font-bold');
 
         if (p.ghosts < 0) {
           p.isBankrupt = true;
@@ -653,7 +762,7 @@ export default function App() {
     });
   };
 
-  // Close Card Modal and Proceed Turn
+  // Close Card Modal and Proceed Turn for Human
   const handleCardModalConfirm = () => {
     if (!currentCard) return;
     const card = currentCard;
@@ -681,39 +790,46 @@ export default function App() {
         }
 
         updated[0] = human;
-        advanceToNextPlayer(updated);
+        advanceFromPlayerIndex(0, updated);
         return updated;
       });
     } else {
-      setTimeout(() => advanceToNextPlayer(players), 300);
+      setTimeout(() => advanceFromPlayerIndex(0, players), 300);
     }
   };
 
-  // AI Turn Execution Effect
+  // AI Turn Execution Effect - Orchestrates 4 players rolling in strict sequence
   useEffect(() => {
     if (!isGameStarted || isGameOver || isPaused) return;
-    const activePlayer = players[activePlayerIndex];
-    if (!activePlayer || activePlayer.isHuman || activePlayer.isBankrupt) return;
 
-    // AI Turn automation with organic delay
+    const activePlayer = players[activePlayerIndex];
+    if (!activePlayer || activePlayer.isHuman || activePlayer.isBankrupt) {
+      return;
+    }
+
+    // Guard against duplicate execution
+    if (isAITurnRunningRef.current) return;
+    isAITurnRunningRef.current = true;
+
+    // AI Turn automation with clear dice rolling visual and delay
     aiTimeoutRef.current = setTimeout(() => {
-      // AI rolls dice
+      // AI rolls dice: triggers rolling state & sound
       setIsRolling(true);
       occultAudio.playDiceRoll();
 
-      setTimeout(() => {
+      aiTimeoutRef.current = setTimeout(() => {
         const roll = Math.floor(Math.random() * 6) + 1;
         setLastRoll(roll);
         setIsRolling(false);
         addLog(`🎲 ${activePlayer.name} がサイコロを振った: [${roll}]`, 'roll');
         executeMovement(activePlayerIndex, roll);
-      }, 800);
-    }, 1200);
+      }, 850);
+    }, 1100);
 
     return () => {
       if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
     };
-  }, [activePlayerIndex, isGameStarted, isGameOver, isPaused]);
+  }, [activePlayerIndex, isGameStarted, isGameOver, isPaused, players]);
 
   // If on admin route, show Admin Panel
   if (currentRoute === 'admin') {
@@ -741,7 +857,7 @@ export default function App() {
   const activePlayer = players[activePlayerIndex];
   const isHumanTurn = activePlayer?.isHuman && !isRolling;
   const currentTile = board[selectedTileIndex ?? activePlayer?.position ?? 0];
-  const isLandedOnSelected = activePlayer && activePlayer.position === currentTile.index;
+  const isLandedOnSelected = activePlayer && activePlayer.position === currentTile?.index;
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-slate-950 text-white flex flex-col font-sans select-none">
@@ -780,7 +896,7 @@ export default function App() {
               isLandedOn={Boolean(isLandedOnSelected)}
               onFormAlliance={handleHumanFormAlliance}
               onBattleCryptid={handleHumanBattleCryptid}
-              onPassSpecialTile={() => advanceToNextPlayer(players)}
+              onPassSpecialTile={() => advanceFromPlayerIndex(0, players)}
             />
           </div>
 
@@ -806,12 +922,47 @@ export default function App() {
         </div>
       </div>
 
+      {/* Floating Fast Next Turn button for human on neutral/safe tiles */}
+      {showHumanPassTurnButton && !isRolling && (
+        <div className="fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-40 animate-bounce">
+          <button
+            onClick={() => advanceFromPlayerIndex(0, players)}
+            className="px-6 py-2.5 rounded-full bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 text-white font-bold shadow-2xl border border-purple-400 flex items-center gap-2 cursor-pointer text-sm"
+          >
+            <span>▶ 次の手番へ進む</span>
+            <span className="text-[10px] text-purple-200 opacity-80">(自動進行中)</span>
+          </button>
+        </div>
+      )}
+
+      {/* Unallied Cryptid Encounter Modal for Human */}
+      {encounterCryptid && players[0] && (
+        <CryptidEncounterModal
+          cryptid={encounterCryptid}
+          player={players[0]}
+          onAlliance={handleHumanFormAlliance}
+          onBattle={handleHumanBattleCryptid}
+          onPass={handleHumanPassEncounter}
+        />
+      )}
+
       {/* Occult Fate Card Modal */}
       {currentCard && (
         <CardModal
           card={currentCard}
           is100PercentUnlucky={isCard100PercentUnlucky}
+          reason={cardDrawReason}
           onConfirm={handleCardModalConfirm}
+        />
+      )}
+
+      {/* Broadcast notice when AI draws a card */}
+      {aiCardNotice && (
+        <AICardNotice
+          playerName={aiCardNotice.playerName}
+          card={aiCardNotice.card}
+          is100PercentUnlucky={aiCardNotice.is100PercentUnlucky}
+          reason={aiCardNotice.reason}
         />
       )}
 
@@ -831,7 +982,11 @@ export default function App() {
           players={players}
           settings={settings}
           roundsCount={roundsCount}
-          onRestart={() => setIsGameStarted(false)}
+          onRestart={() => {
+            occultAudio.stopOccultBGM();
+            setIsGameOver(false);
+            setIsGameStarted(false);
+          }}
           onOpenHistory={() => setIsHistoryOpen(true)}
         />
       )}

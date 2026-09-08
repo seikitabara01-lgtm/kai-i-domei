@@ -277,10 +277,167 @@ export const CRYPTIDS: Cryptid[] = [
     curseType: '念力飛翔・破壊騒乱',
     avatarIcon: '🕯️',
     themeColor: '#fbbf24'
+  },
+  {
+    id: 17,
+    name: '口裂け女',
+    nameEn: 'Kuchisake-onna',
+    country: '日本',
+    grade: '2級',
+    allianceCost: 1050,
+    baseTribute: 420,
+    description: '「私、きれい…？」と尋ね耳元まで裂けた口を見せる都市伝説の代表格怪異。',
+    curseType: '絶対問答・裁ち鋏',
+    avatarIcon: '✂️',
+    themeColor: '#e11d48'
+  },
+  {
+    id: 18,
+    name: 'チュパカブラ',
+    nameEn: 'Chupacabra',
+    country: 'プエルトリコ',
+    grade: '2級',
+    allianceCost: 980,
+    baseTribute: 400,
+    description: '家畜の血を瞬時に吸い尽くす奇怪な吸血生物。暗闇から鋭い牙で忍び寄る。',
+    curseType: '霊血搾取・吸血牙',
+    avatarIcon: '🦇',
+    themeColor: '#be123c'
+  },
+  {
+    id: 19,
+    name: 'ネッシー',
+    nameEn: 'Nessie',
+    country: 'スコットランド',
+    grade: '1級',
+    allianceCost: 1400,
+    baseTribute: 600,
+    description: '深い霧のネス湖に潜む巨大首長竜UMA。湖面を揺るがし波紋を残して消え去る。',
+    curseType: '湖底深淵・霧中潜伏',
+    avatarIcon: '🦕',
+    themeColor: '#0284c7'
+  },
+  {
+    id: 20,
+    name: 'ウェンディゴ',
+    nameEn: 'Wendigo',
+    country: 'カナダ',
+    grade: '特級',
+    allianceCost: 1800,
+    baseTribute: 850,
+    description: '極寒の吹雪とともに現れる人喰い飢餓の魔獣。終わらない飢えを撒き散らす。',
+    curseType: '飢餓狂乱・吹雪凍結',
+    avatarIcon: '🦌',
+    themeColor: '#0ea5e9'
+  },
+  {
+    id: 21,
+    name: 'ジャージー・デビル',
+    nameEn: 'Jersey Devil',
+    country: 'アメリカ',
+    grade: '1級',
+    allianceCost: 1250,
+    baseTribute: 520,
+    description: '馬の頭にコウモリの翼、蹄を持つ悪魔の子。夜空を甲高い金切り声で翔ける。',
+    curseType: '不吉蹄音・空襲',
+    avatarIcon: '🐎',
+    themeColor: '#b45309'
+  },
+  {
+    id: 22,
+    name: 'メジェド',
+    nameEn: 'Medjed',
+    country: 'エジプト',
+    grade: '1級',
+    allianceCost: 1350,
+    baseTribute: 560,
+    description: '『死者の書』に記されし不可視の打ち倒す神。布を被った姿から目から光線を放つ。',
+    curseType: '神罰不可視・破壊光線',
+    avatarIcon: '👁️',
+    themeColor: '#f59e0b'
+  },
+  {
+    id: 23,
+    name: '土蜘蛛',
+    nameEn: 'Tsuchigumo',
+    country: '日本',
+    grade: '特級',
+    allianceCost: 1700,
+    baseTribute: 780,
+    description: '山奥の洞穴を巣とし、毒糸を吐いて獲物を捕食する古代の巨大蜘蛛妖怪。',
+    curseType: '怨念絡繰・猛毒縛糸',
+    avatarIcon: '🕷️',
+    themeColor: '#78716c'
+  },
+  {
+    id: 24,
+    name: '件 (くだん)',
+    nameEn: 'Kudan',
+    country: '日本',
+    grade: '2級',
+    allianceCost: 1000,
+    baseTribute: 450,
+    description: '人面牛身の予言獣。生まれ落ちて重大な凶事を予言し、数日で息絶える。',
+    curseType: '終末予言・運命確定',
+    avatarIcon: '🐂',
+    themeColor: '#d97706'
+  },
+  {
+    id: 25,
+    name: 'ビッグフット',
+    nameEn: 'Bigfoot',
+    country: 'アメリカ',
+    grade: '2級',
+    allianceCost: 1100,
+    baseTribute: 460,
+    description: '鬱蒼とした原生林に足跡を残す巨大毛むくじゃらの猿人UMA。大地を揺らす。',
+    curseType: '原生獣力・大地震動',
+    avatarIcon: '👣',
+    themeColor: '#a16207'
+  },
+  {
+    id: 26,
+    name: 'グレムリン',
+    nameEn: 'Gremlin',
+    country: 'イギリス',
+    grade: '3級',
+    allianceCost: 550,
+    baseTribute: 220,
+    description: '機械や計器に潜り込み意図的に不具合を起こす悪戯妖精。盤上を狂わせる。',
+    curseType: '機工破壊・悪戯攪乱',
+    avatarIcon: '⚙️',
+    themeColor: '#84cc16'
+  },
+  {
+    id: 27,
+    name: 'バジリスク',
+    nameEn: 'Basilisk',
+    country: 'ギリシャ',
+    grade: '1級',
+    allianceCost: 1450,
+    baseTribute: 620,
+    description: 'その視線で見つめた者を一瞬で石化させる蛇の王。毒息は草木すら枯らす。',
+    curseType: '石化邪視・枯渇猛毒',
+    avatarIcon: '🦎',
+    themeColor: '#15803d'
+  },
+  {
+    id: 28,
+    name: '九尾の狐',
+    nameEn: 'Nine-tailed Fox',
+    country: '日本',
+    grade: '特級',
+    allianceCost: 2000,
+    baseTribute: 950,
+    description: '千年の霊力を宿し九本の尾を揺らす伝説の大妖怪。絶大な妖気で国をも傾ける。',
+    curseType: '傾国妖術・九華火焔',
+    avatarIcon: '🦊',
+    themeColor: '#f43f5e'
   }
 ];
 
 export const INITIAL_BOARD: BoardTile[] = [
+  // Edge 1: Bottom (0..9) - 10 tiles, from Bottom-Right to Bottom-Left (Counter-Clockwise Left Turn)
   {
     index: 0,
     type: 'start',
@@ -323,9 +480,9 @@ export const INITIAL_BOARD: BoardTile[] = [
   },
   {
     index: 5,
-    type: 'occult_rift',
-    name: '異界の特異点',
-    nameSub: '時空跳躍ワープ',
+    type: 'curse_relic',
+    name: '呪物収蔵庫 (深淵)',
+    nameSub: '運命のオカルトカード召喚',
     ownerId: null,
     allianceLevel: 0
   },
@@ -353,21 +510,24 @@ export const INITIAL_BOARD: BoardTile[] = [
     ownerId: null,
     allianceLevel: 1
   },
+  // Corner 1: Left-Bottom (Index 9)
   {
     index: 9,
+    type: 'occult_rift',
+    name: '異界の特異点',
+    nameSub: '時空跳躍ワープ (前方へ跳躍)',
+    ownerId: null,
+    allianceLevel: 0
+  },
+
+  // Edge 2: Left (9..18) - 10 tiles, from Bottom-Left to Top-Left
+  {
+    index: 10,
     type: 'cryptid',
     name: CRYPTIDS[7].name,
     cryptid: CRYPTIDS[7],
     ownerId: null,
     allianceLevel: 1
-  },
-  {
-    index: 10,
-    type: 'curse_relic',
-    name: '呪物収蔵庫',
-    nameSub: '運命のオカルトカード召喚',
-    ownerId: null,
-    allianceLevel: 0
   },
   {
     index: 11,
@@ -395,19 +555,19 @@ export const INITIAL_BOARD: BoardTile[] = [
   },
   {
     index: 14,
+    type: 'curse_relic',
+    name: '降霊の儀式場',
+    nameSub: '運命のオカルトカード召喚',
+    ownerId: null,
+    allianceLevel: 0
+  },
+  {
+    index: 15,
     type: 'cryptid',
     name: CRYPTIDS[11].name,
     cryptid: CRYPTIDS[11],
     ownerId: null,
     allianceLevel: 1
-  },
-  {
-    index: 15,
-    type: 'blood_tax',
-    name: '血税の生贄台',
-    nameSub: '魔王へ5%の血霊納付',
-    ownerId: null,
-    allianceLevel: 0
   },
   {
     index: 16,
@@ -425,8 +585,19 @@ export const INITIAL_BOARD: BoardTile[] = [
     ownerId: null,
     allianceLevel: 1
   },
+  // Corner 2: Top-Left (Index 18)
   {
     index: 18,
+    type: 'curse_relic',
+    name: '呪物大収蔵庫',
+    nameSub: '運命のオカルトカード召喚',
+    ownerId: null,
+    allianceLevel: 0
+  },
+
+  // Edge 3: Top (18..27) - 10 tiles, from Top-Left to Top-Right
+  {
+    index: 19,
     type: 'cryptid',
     name: CRYPTIDS[14].name,
     cryptid: CRYPTIDS[14],
@@ -434,10 +605,133 @@ export const INITIAL_BOARD: BoardTile[] = [
     allianceLevel: 1
   },
   {
-    index: 19,
+    index: 20,
     type: 'cryptid',
     name: CRYPTIDS[15].name,
     cryptid: CRYPTIDS[15],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 21,
+    type: 'cryptid',
+    name: CRYPTIDS[16].name,
+    cryptid: CRYPTIDS[16],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 22,
+    type: 'cryptid',
+    name: CRYPTIDS[17].name,
+    cryptid: CRYPTIDS[17],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 23,
+    type: 'curse_relic',
+    name: '黄泉の託宣所',
+    nameSub: '運命のオカルトカード召喚',
+    ownerId: null,
+    allianceLevel: 0
+  },
+  {
+    index: 24,
+    type: 'cryptid',
+    name: CRYPTIDS[18].name,
+    cryptid: CRYPTIDS[18],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 25,
+    type: 'cryptid',
+    name: CRYPTIDS[19].name,
+    cryptid: CRYPTIDS[19],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 26,
+    type: 'cryptid',
+    name: CRYPTIDS[20].name,
+    cryptid: CRYPTIDS[20],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  // Corner 3: Top-Right (Index 27)
+  {
+    index: 27,
+    type: 'blood_tax',
+    name: '血税の生贄台',
+    nameSub: '魔王へ5%の血霊納付',
+    ownerId: null,
+    allianceLevel: 0
+  },
+
+  // Edge 4: Right (27..35 + 0) - 10 tiles, from Top-Right to Bottom-Right
+  {
+    index: 28,
+    type: 'cryptid',
+    name: CRYPTIDS[21].name,
+    cryptid: CRYPTIDS[21],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 29,
+    type: 'cryptid',
+    name: CRYPTIDS[22].name,
+    cryptid: CRYPTIDS[22],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 30,
+    type: 'cryptid',
+    name: CRYPTIDS[23].name,
+    cryptid: CRYPTIDS[23],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 31,
+    type: 'cryptid',
+    name: CRYPTIDS[24].name,
+    cryptid: CRYPTIDS[24],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 32,
+    type: 'occult_rift',
+    name: '次元の裂け目',
+    nameSub: '時空跳躍ワープ (前方へ跳躍)',
+    ownerId: null,
+    allianceLevel: 0
+  },
+  {
+    index: 33,
+    type: 'cryptid',
+    name: CRYPTIDS[25].name,
+    cryptid: CRYPTIDS[25],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 34,
+    type: 'cryptid',
+    name: CRYPTIDS[26].name,
+    cryptid: CRYPTIDS[26],
+    ownerId: null,
+    allianceLevel: 1
+  },
+  {
+    index: 35,
+    type: 'cryptid',
+    name: CRYPTIDS[27].name,
+    cryptid: CRYPTIDS[27],
     ownerId: null,
     allianceLevel: 1
   }
